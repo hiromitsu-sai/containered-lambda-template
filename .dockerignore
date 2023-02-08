@@ -1,0 +1,6 @@
+.aws
+.vscode
+Pipfile.lock
+docker-compose.yml
+Dockerfile
+.env

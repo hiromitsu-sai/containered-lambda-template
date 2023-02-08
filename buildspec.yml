@@ -1,0 +1,40 @@
+# AWS CI/CD Spec
+version: 0.2
+
+env:
+  variables:
+    LOG_LEVEL: "info"
+  secrets-manager:
+    DOCKERHUB_USER: arn:aws:secretsmanager:${AWS_REGION_NAME}:${AWS_ACCOUNT_ID}:secret:${AWS_KMS_ID}:username
+    DOCKERHUB_PASS: arn:aws:secretsmanager:${AWS_REGION_NAME}:${AWS_ACCOUNT_ID}:secret:${AWS_KMS_ID}:password
+
+phases:
+  install:
+    runtime-versions:
+      docker: 18
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Logging in to Docker Hub...
+      - echo $DOCKERHUB_PASS | docker login -u $DOCKERHUB_USER --password-stdin
+      - echo Building the Docker image...
+      - docker build -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION_NAME}.amazonaws.com/{APP_NAME}:$IMAGE_TAG .
+      - docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION_NAME}.amazonaws.com/{APP_NAME}:$IMAGE_TAG ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION_NAME}.amazonaws.com/{APP_NAME}:latest
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker images...
+      - docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION_NAME}.amazonaws.com/{APP_NAME}:latest
+      - docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION_NAME}.amazonaws.com/{APP_NAME}:$IMAGE_TAG
+      - echo Writing image definitions file...
+      - printf '[{"name":"{APP_NAME}","imageUri":"%s"}]' ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION_NAME}.amazonaws.com/{APP_NAME}:$IMAGE_TAG > imagedefinitions.json
+artifacts:
+  files:
+    - imagedefinitions.json
